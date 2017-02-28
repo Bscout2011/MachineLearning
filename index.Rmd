@@ -1,0 +1,77 @@
+---
+title: "Machine Learning Exercise Movements"
+author: "Andrew Washbrun"
+date: "February 27, 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+
+The Internet of Things allows the classification of previously undocumented activities, such as exercise routines, in gross detail allowing machine learning prediction models to detect which type of exercise a user is attempting. Utilizing data from the Weight Lifting Exercise Dataset, classification and random forest prediciton models can predict what type of dumbell exercise a user is attempting based on accelerometer data gather on the user's arm, forearm, waist and dumbell.
+
+## Data Wrangling
+Accelerometer data is download from dataset's website: http://groupware.les.inf.puc-rio.br/har . Training and validation sets are imported and cleaned up to remove uninterprettable values like NA, #DIV/0!, and empty values. Then the first several columns are removed because they contain non-movement related data like user and timestamp. Then the training set is split 70/30 into a training and testing set to prevent model overfitting for the validation set.
+
+```{r dataWrangling}
+library(caret); library(rpart);library(rattle)
+training <- read.csv('pml-training.csv', na.strings=c("NA","#DIV/0!",""))
+validation <- read.csv('pml-testing.csv', na.strings=c("NA","#DIV/0!",""))
+
+
+#wrangling data into variables
+validation <- validation[, colSums(is.na(training)) == 0]
+training <- training[, colSums(is.na(training)) == 0]
+training <- training[,-c(1:7)]
+validation <- validation[,-c(1:7)]
+
+
+inTrain <- createDataPartition(y=training$classe,
+                               p=0.7, list=FALSE)
+trainingData <- training[inTrain,]
+testingData <- training[-inTrain,]
+
+names(trainingData)
+```
+
+The remaining predictors are accelerometer data from the user and the "classe" variable which is the exercise type. 
+
+## Recursive Partitioning
+
+Classification trees partition data into logical trees where successive predictors lead to a classification. The classifiers are built such that the root of each branch contains a sufficiently "pure" class, meanining data with identical predictor values will be evaluated to that root class.
+
+```{r rpart}
+#tree prediction
+modFit <- rpart(classe ~ ., method='class', data=trainingData)
+fancyRpartPlot(modFit)
+predictions <- predict(modFit,testingData,type='class')
+confusionStats <- confusionMatrix(predictions,testingData$classe)
+confusionStats
+tableStats <- as.data.frame(confusionStats$table)
+ggplot(aes(Prediction,Reference),data=tableStats) + 
+  geom_tile(aes(fill=Freq)) + scale_fill_gradient(low="green", high="red")
+```
+The first plot illustrates the classification tree from the top (input) to the bottom (output), from the predictor values to the exercise outcome. The second output is a set of statistics for the model. The main takeaway is the accuracy: 71.5%. Not especially accurate so we'll employ another model. The last plot is an illustration of the Confusion Matrix statistics.
+
+## Random Forest
+
+Random forests extend the idea of classification trees with random bootstrapping. By resampling and averaging models, a more robust decision tree is created.
+
+```{r rForest}
+#Random Forest
+library(randomForest)
+forestModel <- randomForest(classe~.,data=trainingData)
+forestPredictions <- predict(forestModel,testingData,type='class')
+forestConfStats <- confusionMatrix(forestPredictions,testingData$classe)
+forestConfStats
+forestTableStats <- as.data.frame(forestConfStats$table)
+ggplot(aes(Prediction,Reference),data=forestTableStats) + 
+  geom_tile(aes(fill=Freq)) + scale_fill_gradient(low="green", high="red")
+```
+
+Comparing the accuracy between random forest and the standard classication tree model: 99.3% vs. 71.5% the random forest model is a more accurate model for prediction.
